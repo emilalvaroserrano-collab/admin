@@ -191,7 +191,7 @@ export async function startCsrCall(options: CsrCallOptions = {}): Promise<CsrCal
     listen();
   };
 
-  const FILLERS = ["Let me check that for you real quick.", "One moment, let me look that up.", "Give me just a sec.", "Hmm, let me see here.", "Ah, okay — let me pull that up."];
+  const FILLERS = ["Mm-hmm.", "Okay, one sec.", "Hmm, let me see.", "Just a moment.", "Alright, give me a sec.", "Let me check that."];
   const reply = async (text: string) => {
     const said = text.trim();
     if (!said || !alive) return;
@@ -204,14 +204,25 @@ export async function startCsrCall(options: CsrCallOptions = {}): Promise<CsrCal
     const answerPromise = askCsrAgent({ data: { text: said, history: history.slice(-8) } })
       .then((result) => { answer = (result.answer || "").trim(); })
       .catch(() => { failed = true; });
-    // No dead air: keep speaking short fillers while the agent works in the background.
-    while (alive && !failed && !answer) {
+    const wait = (ms: number) => new Promise<void>((resolve) => { const t = setTimeout(resolve, ms); if (!alive) { clearTimeout(t); resolve(); } });
+    // Only speak a filler if the answer is taking a moment — never on every reply.
+    await Promise.race([answerPromise, wait(1400)]);
+    if (alive && !failed && !answer) {
       const filler = FILLERS[Math.floor(Math.random() * FILLERS.length)];
       setState("speaking");
       await speak(filler, said);
       if (!alive) return;
       stopListening();
       setState("thinking");
+      await Promise.race([answerPromise, wait(4000)]);
+      if (alive && !failed && !answer) {
+        const filler2 = FILLERS[Math.floor(Math.random() * FILLERS.length)];
+        setState("speaking");
+        await speak(filler2, said);
+        if (!alive) return;
+        stopListening();
+        setState("thinking");
+      }
     }
     await answerPromise;
     if (!alive) return;

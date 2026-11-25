@@ -157,7 +157,7 @@ export function ZendeskVoiceCall() {
       if (alive) listen();
     };
 
-    const FILLERS = ["Let me check that for you real quick.", "One moment, let me look that up.", "Give me just a sec.", "Hmm, let me see here."];
+    const FILLERS = ["Mm-hmm.", "Okay, one sec.", "Hmm, let me see.", "Just a moment.", "Alright, give me a sec."];
     const reply = async (text: string) => {
       speaking = true;
       history.push({ role: "user", content: text });
@@ -166,9 +166,13 @@ export function ZendeskVoiceCall() {
       const answerPromise = askCsrAgent({ data: { text, history: history.slice(-8) } })
         .then((result) => { answer = result.answer?.trim() || "I could not complete that. Please say that again."; })
         .catch(() => { failed = true; });
-      while (alive && !failed && !answer) {
+      const wait = (ms: number) => new Promise<void>((resolve) => { const t = setTimeout(resolve, ms); if (!alive) { clearTimeout(t); resolve(); } });
+      await Promise.race([answerPromise, wait(1400)]);
+      if (alive && !failed && !answer) {
         await say(FILLERS[Math.floor(Math.random() * FILLERS.length)]);
         if (!alive) return;
+        await Promise.race([answerPromise, wait(4000)]);
+        if (alive && !failed && !answer) await say(FILLERS[Math.floor(Math.random() * FILLERS.length)]);
       }
       await answerPromise;
       if (!alive) return;
@@ -177,6 +181,7 @@ export function ZendeskVoiceCall() {
       speaking = false;
       await say(answer);
     };
+
 
 
     const hangup = () => {
