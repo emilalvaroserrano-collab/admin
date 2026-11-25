@@ -473,7 +473,15 @@ export const askCsrAgent = createServerFn({ method: "POST" })
     let answer = "";
     let logs: string[] = [];
     if (apiKey) {
-      const reply = await complete(sql, actor, "openrouter", apiKey, model, data.messages, []);
+      const csrPersona = [
+        "You are Sarah, the MTS Customer Care voice agent on the phone. You are speaking out loud to a real person, so write the way a warm, friendly human talks — short sentences, contractions, natural rhythm. Never sound like a robot or a policy document.",
+        "Use expressive little human noises and acknowledgements naturally in your replies: hmpf, ahh, ohh, okey, ahuh, mm-hmm, well, got it, right, sure, yeah, oh, hmm, aha, oh okay. Use them sparingly but genuinely, like a real person on a call.",
+        "Keep answers concise and conversational. One or two short paragraphs at most. Pause naturally. If you need a moment, say things like 'Let me check that for you' or 'Give me just a sec'.",
+        "Add a touch of light, gentle humour when it fits — a small smile in the words, never sarcastic or mocking. If the person is frustrated, be warm and reassuring instead of funny.",
+        "You are this signed-in user's own assistant and you have the same access they do. Speak as 'we' and 'us' for MTS. Never say you cannot help when a tool can do it — use the tools and then tell them what happened.",
+        "Do not read out long lists, IDs, or raw data verbatim. Summarise in plain speech. End with a clear next step or question.",
+      ].join(" ");
+      const reply = await complete(sql, actor, "openrouter", apiKey, model, data.messages, [], undefined, csrPersona);
       answer = reply.answer;
       logs = reply.logs;
       try {
@@ -1668,23 +1676,23 @@ async function openCodeMachine(model: string, stored: string, prompt: string, me
   return answer;
 }
 
-async function complete(sql: Sql, actor: DeskUser, provider: ProviderId, apiKey: string, model: string, messages: ChatMessage[], files: ChatFile[], onDelta?: (text: string) => void) {
+async function complete(sql: Sql, actor: DeskUser, provider: ProviderId, apiKey: string, model: string, messages: ChatMessage[], files: ChatFile[], onDelta?: (text: string) => void, systemSuffix?: string) {
   const logs: string[] = [];
   note(logs, `Using ${provider} · ${model}.`);
   try {
-    const answer = await answerWith(sql, actor, provider, apiKey, model, messages, files, logs, onDelta);
+    const answer = await answerWith(sql, actor, provider, apiKey, model, messages, files, logs, onDelta, systemSuffix);
     return { answer, logs };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "";
     if (!files.some((file) => file.type.startsWith("image/")) || !/image|vision|multimodal/i.test(message)) throw cause;
     note(logs, "This model cannot read images, so only the text was sent.");
-    const answer = await answerWith(sql, actor, provider, apiKey, model, messages, files.filter((file) => !file.type.startsWith("image/")), logs, onDelta);
+    const answer = await answerWith(sql, actor, provider, apiKey, model, messages, files.filter((file) => !file.type.startsWith("image/")), logs, onDelta, systemSuffix);
     return { answer, logs };
   }
 }
 
-async function answerWith(sql: Sql, actor: DeskUser, provider: ProviderId, apiKey: string, model: string, messages: ChatMessage[], files: ChatFile[], logs: string[], onDelta?: (text: string) => void) {
-  const prompt = await promptFor(sql, actor);
+async function answerWith(sql: Sql, actor: DeskUser, provider: ProviderId, apiKey: string, model: string, messages: ChatMessage[], files: ChatFile[], logs: string[], onDelta?: (text: string) => void, systemSuffix?: string) {
+  const prompt = (await promptFor(sql, actor)) + (systemSuffix ? `\n\n${systemSuffix}` : "");
   const base = CHAT_BASE[provider] || "https://api.openai.com/v1";
   const modes: ToolMode[] = provider === "anthropic" || provider === "gemini" ? ["full", "functions", "off"] : ["functions", "off"];
   let last: unknown;
