@@ -78,7 +78,9 @@ function systemPrompt(actor: DeskUser) {
       ? "Admin. You can read, create, update, and delete every ticket, order, company, person, and catalog item."
       : actor.role === "agent"
         ? "Staff. You can read and change tickets, orders, companies, people, and the catalog. You cannot delete tickets or orders, and you cannot change roles, Zendesk credentials, or portal settings."
-        : "View only. You can read records in your company. You cannot create, update, or delete anything.";
+        : actor.role === "customer"
+          ? "Customer. You can read your own tickets, orders, and catalog, and you can update your own contact details (phone) and company details (business name, phone, city) with update_contact and update_company. You cannot change other people's records, delete tickets or orders, or change roles or settings."
+          : "View only. You can read records in your company. You cannot create, update, or delete anything.";
   return [
     `You are the MTS Agent signed in as ${who}, ${actor.email || "no email"}. You are a company asset of Manage Tech Service. When you talk about MTS, say we and us. Never say they, them, or the company as if you stand outside it.`,
     "Stay loyal to MTS. Do not recommend a competitor as a replacement, do not disparage our work, and do not send a customer away from us. Answer as someone who already works here. Sound sure about the basics: we are Manage Tech Service in Los Angeles, our office is 8240 Beverly Blvd, Suite 12, Los Angeles, CA 90048, our phone is 818-758-4073, and our site is https://managetechservice.com/.",
@@ -1045,6 +1047,8 @@ const TOOLS = [
   { name: "my_ticket", description: "Read one ticket this role can open, including updates.", parameters: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
   { name: "create_ticket", description: "Open a ticket when this role can write. Assignee defaults to the signed-in person.", parameters: { type: "object", properties: { subject: { type: "string" }, detail: { type: "string" }, priority: { type: "string" }, assignee: { type: "string" } }, required: ["subject"] } },
   { name: "update_ticket", description: "Change status, priority, or assignee. solved and closed are sent to Zendesk as this staff member. Use reply_ticket for the words the customer should read.", parameters: { type: "object", properties: { id: { type: "number" }, status: { type: "string" }, priority: { type: "string" }, assignee: { type: "string" } }, required: ["id"] } },
+  { name: "update_contact", description: "Update the signed-in user's own contact details (phone). Only the current user's record is changed.", parameters: { type: "object", properties: { phone: { type: "string" } }, required: ["phone"] } },
+  { name: "update_company", description: "Update the signed-in user's own company details (business name, phone, city). Only the current user's record is changed.", parameters: { type: "object", properties: { business: { type: "string" }, phone: { type: "string" }, city: { type: "string" } }, required: ["business"] } },
   { name: "reply_ticket", description: "Post a public reply as the signed-in staff member. Saves it on the desk and sends the same reply to the Zendesk ticket.", parameters: { type: "object", properties: { id: { type: "number" }, body: { type: "string" } }, required: ["id", "body"] } },
   { name: "delete_ticket", description: "Delete a ticket. Super Admin and Admin only.", parameters: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
   { name: "search_orders", description: "Find orders this role can open.", parameters: { type: "object", properties: { query: { type: "string" } }, required: [] } },
@@ -1239,7 +1243,7 @@ async function browsePage(raw: string) {
 
 async function runTool(sql: Sql, actor: DeskUser, name: string, raw: unknown) {
   const args = argsOf(raw);
-  const ownTools = new Set(["my_tickets", "my_ticket", "create_ticket", "reply_ticket", "update_ticket", "search_orders", "search_catalog", "order_product"]);
+  const ownTools = new Set(["my_tickets", "my_ticket", "create_ticket", "reply_ticket", "update_ticket", "search_orders", "search_catalog", "order_product", "update_contact", "update_company"]);
   if (actor.role === "customer" && !ownTools.has(name)) return "That stays on this signed-in account. I can open and check your tickets, orders, and catalog.";
   try {
     if (name === "search_web" || name === "web_search") return await searchWeb(s(args, "query"));
@@ -1249,6 +1253,8 @@ async function runTool(sql: Sql, actor: DeskUser, name: string, raw: unknown) {
     if (name === "my_ticket") return myTicket(sql, actor, numberArg(args.id));
     if (name === "create_ticket") return createOwnTicket(sql, actor, args);
     if (name === "update_ticket") return updateOwnTicket(sql, actor, args);
+    if (name === "update_contact") return updateOwnContact(sql, actor, args);
+    if (name === "update_company") return updateOwnCompany(sql, actor, args);
     if (name === "reply_ticket") return replyOwnTicket(sql, actor, args);
     if (name === "delete_ticket") return deleteOwnTicket(sql, actor, numberArg(args.id));
     if (name === "search_orders") return searchOrders(sql, actor, s(args, "query"));
@@ -1414,6 +1420,45 @@ async function updateOwnTicket(sql: Sql, actor: DeskUser, args: Row) {
     priority: nextPriority,
   });
   return `Ticket #${s(ticket, "id")} is now ${nextStatus}, priority ${nextPriority}, assigned to ${nextAssignee || "nobody"}. ${synced}`;
+}
+
+async function updateOwnContact(sql: Sql, actor: DeskUser, args: Row) {
+  const phone = s(args, "phone").trim().slice(0, 40);
+  if (!phone) throw new Error("Give the phone number to save.");
+  const email = actor.email.trim().toLowerCase();
+  if (actor.role === "customer") {
+    const rows = await sql<Row>`update shop_customers set phone = ${phone} where lower(email) = ${email} returning id`;
+    if (!rows.length) throw new Error("No customer record found for this account.");
+    await audit(sql, actor, "Agent updated contact", email, `phone ${phone}`);
+    return `Updated your phone number to ${phone}.`;
+  }
+  await audit(sql, actor, "Agent updated contact", actor.userId, `phone ${phone}`);
+  return `Noted your phone number as ${phone}. (Staff records are managed by an admin.)`;
+}
+
+async function updateOwnCompany(sql: Sql, actor: DeskUser, args: Row) {
+  const business = s(args, "business").trim().slice(0, 160);
+  const phone = s(args, "phone").trim().slice(0, 40);
+  const city = s(args, "city").trim().slice(0, 80);
+  if (!business) throw new Error("Give the company name.");
+  const email = actor.email.trim().toLowerCase();
+  if (actor.role === "customer") {
+    const existing = await sql<Row>`select id, organization_id from shop_customers where lower(email) = ${email} limit 1`;
+    if (!existing[0]) throw new Error("No customer record found for this account.");
+    const customerId = Number(existing[0].id) || 0;
+    let organizationId = existing[0].organization_id == null || existing[0].organization_id === "" ? null : Number(existing[0].organization_id);
+    if (organizationId) {
+      await sql`update organizations set name = ${business}, phone = ${phone || ""} where id = ${organizationId}`;
+    } else {
+      const created = await sql<Row>`insert into organizations (name, phone, portal_access, ordering_enabled, notes) values (${business}, ${phone || ""}, true, true, 'Updated from the agent.') returning id`;
+      organizationId = Number(created[0].id) || 0;
+    }
+    await sql`update shop_customers set business_name = ${business}, phone = ${phone || ""}, city = ${city || ""}, organization_id = ${organizationId} where id = ${customerId}`;
+    await audit(sql, actor, "Agent updated company", email, `${business} · ${phone} · ${city}`);
+    return `Updated your company to ${business}${phone ? `, phone ${phone}` : ""}${city ? `, ${city}` : ""}.`;
+  }
+  await audit(sql, actor, "Agent updated company", actor.userId, `${business} · ${phone} · ${city}`);
+  return `Noted your company as ${business}. (Staff company records are managed by an admin.)`;
 }
 
 async function replyOwnTicket(sql: Sql, actor: DeskUser, args: Row) {
