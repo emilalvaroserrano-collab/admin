@@ -106,19 +106,30 @@ async function promptFor(sql: Sql, actor: DeskUser) {
 async function deskBrief(sql: Sql, actor: DeskUser) {
   const name = actor.name.trim();
   const email = actor.email.trim();
-  const tickets = await sql<Row>`
-    select id, subject, status from tickets
-    where (${name} <> '' and lower(assignee) = lower(${name})) or (${email} <> '' and lower(assignee) = lower(${email}))
-    order by updated_at desc limit 6
-  `;
-  const tasks = await sql<Row>`select title, status from staff_tasks where user_id = ${actor.userId} and status <> 'done' order by updated_at desc limit 6`;
+  let tickets: Row[] = [];
+  let tasks: Row[] = [];
+  try {
+    tickets = await sql<Row>`
+      select id, subject, status from tickets
+      where (${name} <> '' and lower(assignee) = lower(${name})) or (${email} <> '' and lower(assignee) = lower(${email}))
+      order by updated_at desc limit 6
+    `;
+  } catch { /* tickets table may not exist yet */ }
+  try {
+    tasks = await sql<Row>`select title, status from staff_tasks where user_id = ${actor.userId} and status <> 'done' order by updated_at desc limit 6`;
+  } catch { /* staff_tasks may not exist yet */ }
   const ticketLine = tickets.map((row) => `#${s(row, "id")} ${s(row, "status")} ${s(row, "subject")}`).join("; ") || "none";
   const taskLine = tasks.map((row) => `${s(row, "status")}: ${s(row, "title")}`).join("; ") || "none";
   return `Current user data for ${actor.name || "this person"} (${actor.email || "no email"}, ${actor.role}). Assigned tickets: ${ticketLine}. Open tasks: ${taskLine}.`;
 }
 
 async function memoryBrief(sql: Sql, actor: DeskUser) {
-  const rows = await sql<Row>`select fact from agent_memories where user_id = ${actor.userId} order by id desc limit 24`;
+  let rows: Row[] = [];
+  try {
+    rows = await sql<Row>`select fact from agent_memories where user_id = ${actor.userId} order by id desc limit 24`;
+  } catch {
+    /* agent_memories may not exist yet in this environment */
+  }
   if (!rows.length) return "Long-term memory: nothing saved yet.";
   return `Long-term memory from this person's earlier chats:\n${rows.map((row) => `- ${s(row, "fact")}`).join("\n")}`;
 }
@@ -448,8 +459,17 @@ export const askCsrAgent = createServerFn({ method: "POST" })
     const asked = data.messages.at(-1)?.content || "";
     // Use the MTS agent (tools, knowledge, memory, role-aware prompt) instead of the
     // Zendesk ultimate bot, so the CSR has the same capabilities as the chat agent.
-    const apiKey = (await envKey("openrouter")) || (await readKey(sql, "openrouter")).apiKey;
-    const model = (await readKey(sql, "openrouter")).model || "openrouter/free";
+    let savedKey = "";
+    let savedModel = "";
+    try {
+      const saved = await readKey(sql, "openrouter");
+      savedKey = saved.apiKey || "";
+      savedModel = saved.model || "";
+    } catch {
+      /* agent_provider_keys may not exist yet in this environment */
+    }
+    const apiKey = (await envKey("openrouter")) || savedKey;
+    const model = savedModel || "openrouter/free";
     let answer = "";
     let logs: string[] = [];
     if (apiKey) {
