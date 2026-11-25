@@ -397,7 +397,7 @@ export async function invoiceAttachment(sql: Sql, orderId: number) {
 </table>
 <p style="margin:16px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#1d1d1f;text-align:left;">Subtotal: ${document.subtotal}<br>${escapeHtml(document.shippingLabel)}: ${document.shipping}<br><strong>Total: ${document.total}</strong></p>
 ${document.notes ? `<p style="margin:16px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#1d1d1f;text-align:left;">Notes: ${escapeHtml(document.notes)}</p>` : ""}
-<p style="margin:16px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;text-align:left;"><a href="https://managetech.cloudgpu.site/production/user-portal/orders/${orderId}" style="color:#003970;">View this order</a></p>
+<p style="margin:16px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;text-align:left;"><a href="https://mtsportal.cloudgpu.site/production/user-portal/orders/${orderId}" style="color:#003970;">View this order</a></p>
 <p style="margin:16px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#3a3a3c;text-align:left;">The invoice PDF is attached. Reply to this email if you need a change.</p>
 </div>`;
   const summary = [`Invoice ${number}`, `Date ${placed}`, ...itemRows.map((item) => `${item.quantity} x ${item.name} ${item.amount}`), `Total ${document.total}`].join("\n");

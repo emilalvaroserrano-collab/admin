@@ -24,7 +24,7 @@ export function SettingsPage() {
   const query = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [staff, setStaff] = useState<Staff[]>([]);
-  const [fromEmail, setFromEmail] = useState("noreply@managetech.cloudgpu.site");
+  const [fromEmail, setFromEmail] = useState("noreply@mtsportal.cloudgpu.site");
   const [apiKey, setApiKey] = useState("");
   const [testTo, setTestTo] = useState("");
   const { user } = useCurrentUserState();
@@ -33,7 +33,7 @@ export function SettingsPage() {
     if (!query.data) return;
     setSettings(query.data.settings);
     setStaff(query.data.staff);
-    setFromEmail(query.data.mail.fromEmail || "noreply@managetech.cloudgpu.site");
+    setFromEmail(query.data.mail.fromEmail || "noreply@mtsportal.cloudgpu.site");
     setApiKey("");
   }, [query.data]);
 

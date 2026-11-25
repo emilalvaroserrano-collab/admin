@@ -3,7 +3,7 @@ import { handleZendeskWebhook } from "@/lib/portal/zendesk-webhook.server";
 
 /**
  * Zendesk's configured "MTS portal sync" webhook target:
- *   https://managetech.cloudgpu.site/ai-agents/automation/support/v1/webhook
+ *   https://mtsportal.cloudgpu.site/ai-agents/automation/support/v1/webhook
  *
  * Same verification and ingest as `/api/zendesk/webhook`, mounted on the exact
  * path the Zendesk admin panel points at.

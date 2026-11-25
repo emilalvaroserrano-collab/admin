@@ -3,7 +3,7 @@ import test from "node:test";
 import { oauthUrls, redirectAllowed } from "./mts-oauth-public.ts";
 
 test("mts-portal only redirects back to this portal or Zendesk", () => {
-  assert.equal(redirectAllowed("https://managetech.cloudgpu.site/integrations"), true);
+  assert.equal(redirectAllowed("https://mtsportal.cloudgpu.site/integrations"), true);
   assert.equal(redirectAllowed("https://shop.zendesk.com/integrations/oauth/callback"), true);
   assert.equal(redirectAllowed("https://evil.example/steal"), false);
   assert.equal(redirectAllowed("http://shop.zendesk.com/callback"), false);
@@ -11,6 +11,6 @@ test("mts-portal only redirects back to this portal or Zendesk", () => {
 
 test("authorize and token urls are not the site root", () => {
   const urls = oauthUrls();
-  assert.equal(urls.authorizeUrl, "https://managetech.cloudgpu.site/api/oauth/authorize");
-  assert.equal(urls.tokenUrl, "https://managetech.cloudgpu.site/api/oauth/token");
+  assert.equal(urls.authorizeUrl, "https://mtsportal.cloudgpu.site/api/oauth/authorize");
+  assert.equal(urls.tokenUrl, "https://mtsportal.cloudgpu.site/api/oauth/token");
 });

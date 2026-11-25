@@ -173,7 +173,7 @@ export async function sendZendeskPasswordCode(invited: ZendeskInvite, code: stri
     tags: ["password-code"],
     comment: {
       public: true,
-      body: `Your verification code is ${code}. It expires in 15 minutes. Enter it at https://managetech.cloudgpu.site/production/signin. If you did not ask for this, ignore this email.`,
+      body: `Your verification code is ${code}. It expires in 15 minutes. Enter it at https://mtsportal.cloudgpu.site/production/signin. If you did not ask for this, ignore this email.`,
     },
   };
   const send = (status?: string) =>

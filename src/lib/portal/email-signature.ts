@@ -1,4 +1,4 @@
-export const PORTAL_ORIGIN = "https://managetech.cloudgpu.site";
+export const PORTAL_ORIGIN = "https://mtsportal.cloudgpu.site";
 export const TICKETS_URL = `${PORTAL_ORIGIN}/production/user-portal/tickets`;
 
 export const DEFAULT_EMAIL_SIGNATURE = `{{agent.name}}

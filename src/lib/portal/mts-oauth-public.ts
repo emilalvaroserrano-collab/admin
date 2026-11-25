@@ -1,5 +1,5 @@
 export const MTS_AUTH_CLIENT = "managetech";
-export const MTS_AUTH_ORIGIN = "https://managetech.cloudgpu.site";
+export const MTS_AUTH_ORIGIN = "https://mtsportal.cloudgpu.site";
 
 export function oauthUrls(origin = MTS_AUTH_ORIGIN) {
   const base = origin.replace(/\/$/, "");
@@ -16,7 +16,7 @@ export function redirectAllowed(value: string) {
     const host = url.hostname.toLowerCase();
     if (host === "localhost" || host === "127.0.0.1") return url.protocol === "http:" || url.protocol === "https:";
     if (url.protocol !== "https:") return false;
-    return host === "managetech.cloudgpu.site" || host.endsWith(".zendesk.com") || host.endsWith(".zdusercontent.com");
+    return host === "mtsportal.cloudgpu.site" || host.endsWith(".zendesk.com") || host.endsWith(".zdusercontent.com");
   } catch {
     return false;
   }

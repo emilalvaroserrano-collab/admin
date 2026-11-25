@@ -247,10 +247,10 @@ export function IntegrationPage() {
               <div>
                 <dt className="text-xs text-muted">Redirect URLs</dt>
                 <dd className="mt-1 grid gap-1 break-all font-mono text-xs">
-                  <span>https://managetech.cloudgpu.site/api/auth/oauth2/callback/zendesk</span>
-                  <span>https://managetech.cloudgpu.site/api/zendesk/customer/callback</span>
-                  <span>https://managetech.cloudgpu.site/production/signin</span>
-                  <span>https://managetech.cloudgpu.site/api/zendesk/oauth/callback</span>
+                  <span>https://mtsportal.cloudgpu.site/api/auth/oauth2/callback/zendesk</span>
+                  <span>https://mtsportal.cloudgpu.site/api/zendesk/customer/callback</span>
+                  <span>https://mtsportal.cloudgpu.site/production/signin</span>
+                  <span>https://mtsportal.cloudgpu.site/api/zendesk/oauth/callback</span>
                   <span>http://localhost:8080/production/signin</span>
                   <span>http://127.0.0.1:8080/production/signin</span>
                   <span>http://localhost:8080/api/zendesk/oauth/callback</span>
@@ -275,7 +275,7 @@ export function IntegrationPage() {
             <div className="mt-4 border-t border-line pt-3 text-sm">
               <p className="font-medium">OAuth client</p>
               <p className="mt-1 text-muted">
-                {data.oauthClientId ? `Authorization code · ${data.oauthClientId} · https://managetech.cloudgpu.site/api/oauth/token` : "Not set"}
+                {data.oauthClientId ? `Authorization code · ${data.oauthClientId} · https://mtsportal.cloudgpu.site/api/oauth/token` : "Not set"}
               </p>
               <p className="mt-3 font-medium">Conversations API</p>
               <p className="mt-1 text-muted">{data.conversationsReady ? `Key ${data.conversationsKeyId} · app ${data.conversationsAppId}` : "Not set"}</p>

@@ -16,7 +16,7 @@ function clientSecret() {
 export function zendeskRedirectUri(request: Request) {
   const origin = new URL(request.url).origin;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return `${origin}/api/zendesk/oauth/callback`;
-  return "https://managetech.cloudgpu.site/api/zendesk/oauth/callback";
+  return "https://mtsportal.cloudgpu.site/api/zendesk/oauth/callback";
 }
 
 function sign(payload: string) {

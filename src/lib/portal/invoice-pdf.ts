@@ -98,7 +98,7 @@ export function renderInvoicePdf(invoice: InvoiceDocument) {
   if (invoice.notes) text("F1", 9, 48, 96, clip(`Notes: ${invoice.notes}`, 90), "0.35 0.39 0.45");
   line(48, 72, 564);
   text("F1", 9, 48, 54, "Thank you for your order.", "0.07 0.49 0.53");
-  text("F1", 8, 48, 40, "Manage Tech Service  ·  managetech.cloudgpu.site  ·  The invoice PDF is the record of this order.", "0.43 0.48 0.54");
+  text("F1", 8, 48, 40, "Manage Tech Service  ·  mtsportal.cloudgpu.site  ·  The invoice PDF is the record of this order.", "0.43 0.48 0.54");
 
   const content = commands.join("\n");
   const objects = [
