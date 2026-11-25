@@ -191,6 +191,7 @@ export async function startCsrCall(options: CsrCallOptions = {}): Promise<CsrCal
     listen();
   };
 
+  const FILLERS = ["Let me check that for you real quick.", "One moment, let me look that up.", "Give me just a sec.", "Hmm, let me see here.", "Ah, okay — let me pull that up."];
   const reply = async (text: string) => {
     const said = text.trim();
     if (!said || !alive) return;
@@ -199,14 +200,22 @@ export async function startCsrCall(options: CsrCallOptions = {}): Promise<CsrCal
     emitTurn({ role: "user", content: said });
     history.push({ role: "user", content: said });
     let answer = "";
-    try {
-      const result = await askCsrAgent({ data: { text: said, history: history.slice(-8) } });
-      answer = (result.answer || "").trim();
-    } catch {
-      answer = "";
+    let failed = false;
+    const answerPromise = askCsrAgent({ data: { text: said, history: history.slice(-8) } })
+      .then((result) => { answer = (result.answer || "").trim(); })
+      .catch(() => { failed = true; });
+    // No dead air: keep speaking short fillers while the agent works in the background.
+    while (alive && !failed && !answer) {
+      const filler = FILLERS[Math.floor(Math.random() * FILLERS.length)];
+      setState("speaking");
+      await speak(filler, said);
+      if (!alive) return;
+      stopListening();
+      setState("thinking");
     }
+    await answerPromise;
     if (!alive) return;
-    if (!answer) answer = TROUBLE;
+    if (failed || !answer) answer = TROUBLE;
     emitTurn({ role: "assistant", content: answer });
     history.push({ role: "assistant", content: answer });
     await speak(answer, said);

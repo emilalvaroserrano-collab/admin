@@ -157,20 +157,27 @@ export function ZendeskVoiceCall() {
       if (alive) listen();
     };
 
+    const FILLERS = ["Let me check that for you real quick.", "One moment, let me look that up.", "Give me just a sec.", "Hmm, let me see here."];
     const reply = async (text: string) => {
       speaking = true;
       history.push({ role: "user", content: text });
-      try {
-        const result = await askCsrAgent({ data: { text, history: history.slice(-8) } });
-        const answer = result.answer?.trim() || "I could not complete that. Please say it again.";
-        history.push({ role: "assistant", content: answer });
-        speaking = false;
-        await say(answer);
-      } catch {
-        speaking = false;
-        await say("I could not reach the agent. Please say that again.");
+      let answer = "";
+      let failed = false;
+      const answerPromise = askCsrAgent({ data: { text, history: history.slice(-8) } })
+        .then((result) => { answer = result.answer?.trim() || "I could not complete that. Please say that again."; })
+        .catch(() => { failed = true; });
+      while (alive && !failed && !answer) {
+        await say(FILLERS[Math.floor(Math.random() * FILLERS.length)]);
+        if (!alive) return;
       }
+      await answerPromise;
+      if (!alive) return;
+      if (failed || !answer) answer = "I could not reach the agent. Please say that again.";
+      history.push({ role: "assistant", content: answer });
+      speaking = false;
+      await say(answer);
     };
+
 
     const hangup = () => {
       if (!alive) return;
