@@ -68,6 +68,7 @@ function RootComponent() {
         <HeadContent />
       </head>
       <body>
+        <script dangerouslySetInnerHTML={{ __html: "(function(){var o=console.error;console.error=function(){try{var m=Array.prototype.map.call(arguments,function(a){return String(a);}).join(' ');if(m.indexOf('Failed to create WebGPU Context Provider')!==-1)return;}catch(e){}return o.apply(console,arguments);};})();" }} />
         <PreviewHostBridge />
         <ErgoHost />
         <AuthProvider>

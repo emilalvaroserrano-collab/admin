@@ -3,6 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <title>Ergo voice</title>
+    <script>
+      (function () {
+        var orig = console.error;
+        console.error = function () {
+          try {
+            var msg = Array.prototype.map.call(arguments, function (a) { return String(a); }).join(" ");
+            if (msg.indexOf("Failed to create WebGPU Context Provider") !== -1) return;
+          } catch (e) {}
+          return orig.apply(console, arguments);
+        };
+      })();
+    </script>
   </head>
   <body>
     <script type="module">
