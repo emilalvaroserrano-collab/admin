@@ -1,6 +1,6 @@
 import { PhoneOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { askZendeskWidget } from "@/lib/portal/mts-agent";
+import { askCsrAgent } from "@/lib/portal/mts-agent";
 import { browserSpeak, elevenClip, geminiClip, playClip } from "@/lib/voice/csr-voice";
 
 type Turn = { role: "user" | "assistant"; content: string };
@@ -161,7 +161,7 @@ export function ZendeskVoiceCall() {
       speaking = true;
       history.push({ role: "user", content: text });
       try {
-        const result = await askZendeskWidget({ data: { text, history: history.slice(-8) } });
+        const result = await askCsrAgent({ data: { text, history: history.slice(-8) } });
         const answer = result.answer?.trim() || "I could not complete that. Please say it again.";
         history.push({ role: "assistant", content: answer });
         speaking = false;

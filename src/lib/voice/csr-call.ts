@@ -1,10 +1,10 @@
-import { askZendeskWidget } from "@/lib/portal/mts-agent";
+import { askCsrAgent } from "@/lib/portal/mts-agent";
 import { browserSpeak, elevenClip, geminiClip, playClip } from "./csr-voice";
 
 /**
  * The CSR call engine — no WebRTC, no Vapi.
  *
- * Mic → browser speech recognition → Zendesk brain (`askZendeskWidget`) →
+ * Mic → browser speech recognition → Zendesk brain (`askCsrAgent`) →
  * Gemini Live native audio. The same engine powers the full-page call screen
  * and the floating portal widget.
  */
@@ -200,7 +200,7 @@ export async function startCsrCall(options: CsrCallOptions = {}): Promise<CsrCal
     history.push({ role: "user", content: said });
     let answer = "";
     try {
-      const result = await askZendeskWidget({ data: { text: said, history: history.slice(-8) } });
+      const result = await askCsrAgent({ data: { text: said, history: history.slice(-8) } });
       answer = (result.answer || "").trim();
     } catch {
       answer = "";

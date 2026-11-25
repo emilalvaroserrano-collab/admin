@@ -414,6 +414,61 @@ export const askZendeskWidget = createServerFn({ method: "POST" })
     return { answer };
   });
 
+export const askCsrAgent = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+    const text = typeof raw.text === "string" ? raw.text.trim().slice(0, 4000) : "";
+    if (!text) throw new Error("Write a message first.");
+    const history = Array.isArray(raw.history)
+      ? raw.history.slice(-8).map((item) => {
+          const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+          const role = row.role === "assistant" ? "assistant" as const : "user" as const;
+          const content = typeof row.content === "string" ? row.content.trim().slice(0, 2000) : "";
+          return { role, content };
+        }).filter((item) => item.content)
+      : [];
+    const messages = history.some((item) => item.role === "user" && item.content === text) ? history : [...history, { role: "user" as const, content: text }];
+    return { messages };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    let actor: DeskUser;
+    try {
+      actor = await requireDesk(sql, context.userId, false);
+    } catch {
+      const users = await sql<Row>`select name, email from "user" where id = ${context.userId} limit 1`;
+      const email = s(users[0], "email").trim().toLowerCase();
+      const name = s(users[0], "name") || email || "Customer";
+      const orgs = email
+        ? await sql<Row>`select organization_id from customer_users where lower(email) = ${email} limit 1`
+        : [];
+      actor = { userId: context.userId, name, email, role: "customer", organizationId: orgs[0] ? Number(orgs[0].organization_id) || null : null };
+    }
+    const asked = data.messages.at(-1)?.content || "";
+    // Use the MTS agent (tools, knowledge, memory, role-aware prompt) instead of the
+    // Zendesk ultimate bot, so the CSR has the same capabilities as the chat agent.
+    const apiKey = (await envKey("openrouter")) || (await readKey(sql, "openrouter")).apiKey;
+    const model = (await readKey(sql, "openrouter")).model || "openrouter/free";
+    let answer = "";
+    let logs: string[] = [];
+    if (apiKey) {
+      const reply = await complete(sql, actor, "openrouter", apiKey, model, data.messages, []);
+      answer = reply.answer;
+      logs = reply.logs;
+      try {
+        await saveChatTurn(sql, actor, 0, asked, answer);
+      } catch {
+        /* memory is best-effort for the voice path */
+      }
+    } else {
+      // Fall back to the Zendesk AI agent when no MTS model key is configured.
+      answer = await zendeskAgent(sql, actor, data.messages, logs);
+    }
+    if (!answer) throw new Error("The agent did not reply.");
+    return { answer, logs };
+  });
+
 const CHAT_BASE: Partial<Record<ProviderId, string>> = {
   openai: "https://api.openai.com/v1",
   openrouter: "https://openrouter.ai/api/v1",
