@@ -13,21 +13,14 @@ function env(name: string) {
   return (process.env[name] || "").trim();
 }
 
-const portalWebhookSecrets = [
-  "ZERyihSUSkZYLyIIAi9RIdmbsUDHzdrAoPdQwvIzUwQyr6HyFZd4X8QhK5cyyl4rZXp3YRS4RXxEdeQiawM4FQ",
-  "cNZYHpVT6CNZFWqKNiy4jR4239tkGxLdHxjd_LKIFVc=",
-  "c8Y3p8P21pGmi6pkC4C7OiOsNZwpuFrtU2_XxnEFnUaDFoJY7UdU5YNTLDLB-JzqvIEgzDDGrUGsBqqEc3ApqA",
-  "XDssQcMUj1LV5-yWyRc8T_28PLJDLNrD51_ouxJNAHc=",
-  "lTc1CDwG0MDH2YPTvERxwC9sZUD4UFFR-e84dauLIz4=",
-  "MfOBWdFuO8bZQGtB6FK73byVEoexi4ekj7t-Y41wX3g=",
-];
+const portalWebhookSecrets: string[] = [];
 
 const shopConversations = {
-  appId: "6b047fc7549137efd52ee1bf",
-  keyId: "int_6b04d8d31e78f683f0829c2b",
-  secret: "fBG2cNqzXwi8_pQp6xcfFuxe_CoUwniuzmz-mRJilvEk__dpADanD2YZlaaMzqfUVIjkKLpImeqD7CT98BbNIw",
-  webhookId: "6b04d8c49973a9a0d974c86b",
-  webhookSecret: "ZERyihSUSkZYLyIIAi9RIdmbsUDHzdrAoPdQwvIzUwQyr6HyFZd4X8QhK5cyyl4rZXp3YRS4RXxEdeQiawM4FQ",
+  appId: "",
+  keyId: "",
+  secret: "",
+  webhookId: "",
+  webhookSecret: "",
 };
 
 let portalConversations: Partial<ConversationsConfig> = {};

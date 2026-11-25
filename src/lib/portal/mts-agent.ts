@@ -1064,7 +1064,7 @@ const TOOLS = [
   { name: "recent_tickets", description: "Read the newest support tickets on this desk.", parameters: { type: "object", properties: {}, required: [] } },
   { name: "recent_orders", description: "Read the newest shop orders on this desk.", parameters: { type: "object", properties: {}, required: [] } },
   { name: "search_catalog", description: "Find catalog products by name or SKU.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
-  { name: "order_product", description: "Place a catalog product on an order for the signed-in account. Use this when they ask to order or buy a product.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
+  { name: "order_product", description: "Find a product and prepare an order quote. Set confirm=true ONLY after the customer explicitly agrees to the quoted price and quantity. Without confirm, returns a quote and asks for confirmation; no order is placed.", parameters: { type: "object", properties: { query: { type: "string" }, confirm: { type: "boolean" } }, required: ["query"] } },
 ];
 
 function openaiTools() {
@@ -1274,7 +1274,7 @@ async function runTool(sql: Sql, actor: DeskUser, name: string, raw: unknown) {
       const rows = await sql<Row>`select name, sku, price_cents, available, stock from products where name ilike ${query} or sku ilike ${query} order by name limit 8`;
       return rows.map((row) => `${s(row, "name")} (${s(row, "sku")}) · ${s(row, "price_cents") || "0"} cents · ${row.available === false ? "hidden" : "available"} · stock ${s(row, "stock") || "0"}`).join("\n") || "No matching products.";
     }
-    if (name === "order_product") return orderOwnProduct(sql, actor, s(args, "query"));
+    if (name === "order_product") return orderOwnProduct(sql, actor, args);
   } catch (cause) {
     return cause instanceof Error ? cause.message : "That tool could not run.";
   }
@@ -1361,7 +1361,7 @@ async function myTickets(sql: Sql, actor: DeskUser, query: string, mine: boolean
   const like = `%${query.trim().slice(0, 80)}%`;
   const rows = await sql<Row>`
     select t.id, t.subject, t.status, t.priority, t.assignee,
-      (select body from ticket_comments c where c.ticket_id = t.id order by c.id desc limit 1) as update
+      (select body from ticket_comments c where c.ticket_id = t.id and (${actor.role !== "customer"} or c.public_note = true) order by c.id desc limit 1) as update
     from tickets t
     where (${actor.role === "customer"} or ${org}::int is null or t.organization_id = ${org})
       and (${actor.role !== "customer"} or lower(coalesce(t.requester_email, '')) = lower(${actor.email}))
@@ -1376,7 +1376,7 @@ async function myTickets(sql: Sql, actor: DeskUser, query: string, mine: boolean
 
 async function myTicket(sql: Sql, actor: DeskUser, id: number) {
   const ticket = await loadTicket(sql, actor, id);
-  const comments = await sql<Row>`select author_name, body, created_at from ticket_comments where ticket_id = ${id} order by id desc limit 8`;
+  const comments = await sql<Row>`select author_name, body, created_at from ticket_comments where ticket_id = ${id} and (${actor.role !== "customer"} or public_note = true) order by id desc limit 8`;
   const updates = comments.map((row) => `${s(row, "author_name")}: ${s(row, "body").slice(0, 180)}`).join("\n") || "No updates yet.";
   return `#${s(ticket, "id")} ${s(ticket, "subject")}\nStatus ${s(ticket, "status")} · Priority ${s(ticket, "priority")} · Assignee ${s(ticket, "assignee") || "unassigned"}\nRequester ${s(ticket, "requester_name")} ${s(ticket, "requester_email")}\nUpdates:\n${updates}`;
 }
@@ -1557,7 +1557,9 @@ async function searchPeople(sql: Sql, actor: DeskUser, query: string) {
   return rows.map((row) => `#${s(row, "id")} ${s(row, "name")} · ${s(row, "email")} · ${s(row, "title")}`).join("\n");
 }
 
-async function orderOwnProduct(sql: Sql, actor: DeskUser, query: string) {
+async function orderOwnProduct(sql: Sql, actor: DeskUser, args: Row) {
+  const query = s(args, "query");
+  const confirm = args.confirm === true;
   const words = query.replace(/[^\w\s.-]/g, " ").replace(/\b(please|order|buy|add|the|a|an|for|me|my|product|catalog|one|some)\b/gi, " ").replace(/\s+/g, " ").trim().slice(0, 80);
   if (!words) return "Tell me which product to order.";
   const like = `%${words}%`;
@@ -1577,6 +1579,10 @@ async function orderOwnProduct(sql: Sql, actor: DeskUser, query: string) {
   if (Number(product.stock) <= 0) return `${s(product, "name")} has no stock. I did not place an order.`;
   const email = actor.email.trim().toLowerCase();
   if (!email.includes("@")) return "This account has no email, so I did not place an order.";
+  const price = Number(product.price_cents) || 0;
+  if (!confirm) {
+    return `Quote: 1 x ${s(product, "name")} (${s(product, "sku")}) at $${(price / 100).toFixed(2)}, total $${(price / 100).toFixed(2)}. No order has been placed yet. Ask the customer to confirm before calling order_product again with confirm=true.`;
+  }
   const { settleNewOrder, ensureDeskOrganization } = await import("./api");
   const organizationId = actor.organizationId || (await ensureDeskOrganization(sql));
   const inserted = await sql<Row>`
