@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouterState, createFileRoute } from "@tanstack/react-router";
-import { Check, Lock } from "lucide-react";
+import { Check, Lock, Loader2, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { StoreFrame, SummaryToggle, useStore } from "@/components/storefront";
 import { getShopAccount, getShopCheckout, placeStorefrontOrder } from "@/lib/portal/api";
@@ -106,6 +106,7 @@ export function Checkout({ onlySku = "" }: { onlySku?: string }) {
   const [cardExp, setCardExp] = useState("12/28");
   const [cardCcv, setCardCcv] = useState("123");
   const [error, setError] = useState("");
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
     const customer = account.data?.customer;
@@ -119,6 +120,7 @@ export function Checkout({ onlySku = "" }: { onlySku?: string }) {
     setPostal(customer.postal);
     setCountry(customer.country || "United States");
   }, [account.data]);
+
 
   const detailed = lines
     .map((line) => ({ ...line, product: store?.products.find((product) => product.sku.toLowerCase() === line.sku.toLowerCase()) }))
@@ -159,6 +161,9 @@ export function Checkout({ onlySku = "" }: { onlySku?: string }) {
     },
     onError: (cause) => setError(cause instanceof Error ? cause.message : "Could not place the order."),
   });
+  useEffect(() => {
+    if (place.data) setShowSuccess(true);
+  }, [place.data]);
 
   if (!store) return null;
   if (detailed.length === 0 && !place.data) {
@@ -175,9 +180,13 @@ export function Checkout({ onlySku = "" }: { onlySku?: string }) {
       </main>
     );
   }
-  if (place.data) {
+  if (place.data && showSuccess) {
     return (
-      <main className="shop-rise mx-auto grid max-w-lg gap-3 px-4 py-12 sm:py-16">
+      <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+        <div className="shop-rise relative mx-auto grid w-full max-w-lg gap-3 rounded-3xl bg-white px-6 py-8 shadow-2xl sm:px-8">
+          <button type="button" onClick={() => setShowSuccess(false)} className="absolute right-4 top-4 grid size-8 place-items-center rounded-full text-muted hover:bg-[#f3f6f7]" aria-label="Close">
+            <X className="size-4" />
+          </button>
         <p className="inline-flex items-center gap-2 text-sm font-semibold text-accent"><Check className="size-4" /> Order received</p>
         <h1 className="text-4xl font-semibold tracking-tight">{place.data.number}</h1>
         <p className="text-base leading-7 text-muted">
@@ -211,7 +220,8 @@ export function Checkout({ onlySku = "" }: { onlySku?: string }) {
             </Link>
           )}
         </div>
-      </main>
+        </div>
+      </div>
     );
   }
 
@@ -246,6 +256,16 @@ export function Checkout({ onlySku = "" }: { onlySku?: string }) {
   }
 
   return (
+    <>
+      {place.isPending ? (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-white/70 backdrop-blur-sm" aria-live="polite" aria-busy="true">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="size-8 animate-spin text-accent" />
+            <p className="text-sm font-semibold text-ink">Processing your order…</p>
+            <p className="text-xs text-muted">Please wait, do not refresh.</p>
+          </div>
+        </div>
+      ) : null}
     <main className="grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(18rem,26rem)]">
       <section className="bg-[#f3f6f7] lg:order-2 lg:border-l lg:border-line lg:px-8 lg:py-10">
         <SummaryToggle total={money(total)}>{summary}</SummaryToggle>
@@ -467,6 +487,7 @@ export function Checkout({ onlySku = "" }: { onlySku?: string }) {
         </div>
       </section>
     </main>
+    </>
   );
 }
 
