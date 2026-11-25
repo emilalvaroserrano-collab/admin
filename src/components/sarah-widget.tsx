@@ -318,11 +318,11 @@ export function SarahWidget() {
     <>
       {full ? (
         <div className="fixed inset-0 z-50 flex flex-col bg-surface md:inset-auto md:right-4 md:bottom-24 md:h-[min(100dvh-8rem,40rem)] md:w-[24rem] md:overflow-hidden md:rounded-2xl md:shadow-2xl" style={wide ? place : undefined}>
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
+          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
             <p className="text-sm font-semibold">{mode === "call" ? (listening ? "Sarah is listening" : "Sarah") : "Chat with Sarah"}</p>
+            {mode === "call" ? <div className="flex-1 px-2"><AudioBars levels={levels} wide /></div> : <div className="flex-1" />}
             <button type="button" aria-label="End support" onClick={endSession}><PhoneOff className="size-4" /></button>
           </header>
-          {mode === "call" ? <div className="px-4 pt-3"><AudioBars levels={levels} wide /></div> : null}
           <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
             {lines.map((line, index) => (
               <p key={`${line.from}-${index}`} className={line.from === "you" ? "ml-8 rounded-2xl bg-accent px-3 py-2 text-sm text-white" : "mr-8 rounded-2xl bg-accent-soft px-3 py-2 text-sm text-ink"}>{line.text}</p>
