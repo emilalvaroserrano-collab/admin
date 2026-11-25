@@ -7,9 +7,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
-// @ts-expect-error JS plugin alongside the TS vite config
 import { grokPwaPlugin } from "./scripts/grok-pwa-plugin.mjs";
-// @ts-expect-error JS plugin alongside the TS vite config
 import { appEnvPlugin } from "./scripts/app-env-plugin.mjs";
 import { isMigrationFile } from "./scripts/migration-plan.mjs";
 import { sharedEmailToken, verificationRedirect, verifySharedEmail } from "./src/lib/auth/shared-email-verification";
@@ -40,7 +38,7 @@ function liveSocketPlugin(): Plugin {
       server.httpServer?.on("upgrade", (req, socket, head) => {
         const pathOnly = (req.url ?? "").split("?", 1)[0] ?? "";
         if (pathOnly !== "/api/live") return;
-        wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
           wss.emit("connection", ws, req);
         });
       });
@@ -48,7 +46,7 @@ function liveSocketPlugin(): Plugin {
         let customerId = 0;
         let release = () => {};
         const helloTimer = setTimeout(() => socket.close(), 8000);
-        socket.on("message", (raw) => {
+        socket.on("message", (raw: any) => {
           void (async () => {
             let body: { type?: string; token?: string } = {};
             try {
