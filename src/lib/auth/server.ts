@@ -103,7 +103,7 @@ const auth0Ready = Boolean(auth0Domain && auth0ClientId && auth0ClientSecret);
 // Deployed sign-in must redirect to the public site, not the vercel.app host.
 // Preview (no Vercel host) keeps a dynamic origin so the sandbox popup still works.
 const vercelHost = env("VERCEL_PROJECT_PRODUCTION_URL") ?? env("VERCEL_URL");
-const explicitBaseURL = vercelHost || env("BETTER_AUTH_URL") ? PUBLIC_APP_ORIGIN : undefined;
+const explicitBaseURL = env("BETTER_AUTH_URL") || (vercelHost ? PUBLIC_APP_ORIGIN : undefined);
 const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS, PUBLIC_APP_HOST];
 // Local `npm run dev` (port 8080 contract). Browsers may send Origin as any of
 // these for the same server — trusting only `localhost` rejects `127.0.0.1` and
@@ -196,11 +196,7 @@ const auth0OAuthConfig = auth0Ready
   : [];
 
 const zendeskSubdomain = env("ZENDESK_SUBDOMAIN");
-const zendeskClientId = (() => {
-  const id = env("ZENDESK_OAUTH_CLIENT_ID");
-  if (!id) return undefined;
-  return id === "mts-portal" || id === "mtsportal" || id === "manage_tech_service" ? "managetech" : id;
-})();
+const zendeskClientId = env("ZENDESK_OAUTH_CLIENT_ID") || "managetech";
 const zendeskClientSecret = env("ZENDESK_OAUTH_CLIENT_SECRET");
 const zendeskReady = Boolean(zendeskSubdomain && zendeskClientId && zendeskClientSecret);
 
@@ -213,6 +209,7 @@ const zendeskOAuthConfig = zendeskReady
         authorizationUrl: `https://${zendeskSubdomain}.zendesk.com/oauth/authorizations/new`,
         tokenUrl: `https://${zendeskSubdomain}.zendesk.com/oauth/tokens`,
         scopes: ["read"],
+        pkce: true,
         authentication: "post" as const,
         overrideUserInfo: true,
         getUserInfo: async (tokens: { accessToken?: string }) => {
@@ -222,10 +219,10 @@ const zendeskOAuthConfig = zendeskReady
           });
           if (!response.ok) return null;
           const body = (await response.json()) as {
-            user?: { id?: number | string; name?: string; email?: string; active?: boolean; suspended?: boolean };
+            user?: { id?: number | string; name?: string; email?: string; active?: boolean; suspended?: boolean; verified?: boolean };
           };
           const user = body.user;
-          if (!user?.id || !user.email || user.suspended || user.active === false) return null;
+          if (!user?.id || !user.email || user.suspended || user.active === false || user.verified !== true) return null;
           return {
             id: String(user.id),
             name: user.name || user.email,
