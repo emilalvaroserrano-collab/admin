@@ -1,118 +1,118 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { getSql } from "@/lib/db";
+import { auth } from "@/lib/auth/server";
 
-const SCOPES = "read write";
-const HOST = "https://managetechservices-16737.zendesk.com";
+const CALLBACK = "/api/zendesk/oauth/callback";
+const COOKIE = "mts-zendesk-grant";
+const TTL = 600;
 
-function clientId() {
-  const id = process.env.ZENDESK_OAUTH_CLIENT_ID?.trim() || "managetech";
-  return id === "mts-portal" || id === "mtsportal" || id === "manage_tech_service" ? "managetech" : id;
-}
-
-function clientSecret() {
-  return process.env.ZENDESK_OAUTH_CLIENT_SECRET?.trim() || "";
+function config() {
+  const subdomain = process.env.ZENDESK_SUBDOMAIN?.trim() || "";
+  const clientId = process.env.ZENDESK_OAUTH_CLIENT_ID?.trim() || "managetech";
+  const secret = process.env.ZENDESK_OAUTH_CLIENT_SECRET?.trim() || "";
+  const scopes = process.env.ZENDESK_OAUTH_SCOPES?.trim() || "read write";
+  const owner = (process.env.BOOTSTRAP_OWNER_EMAIL || process.env.ZENDESK_EMAIL || "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]*$/i.test(subdomain) || !secret || !owner) throw new Error("Zendesk OAuth is not configured.");
+  return { host: `https://${subdomain}.zendesk.com`, subdomain, clientId, secret, scopes, owner };
 }
 
 export function zendeskRedirectUri(request: Request) {
-  const origin = new URL(request.url).origin;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return `${origin}/api/zendesk/oauth/callback`;
-  return "https://mtsportal.cloudgpu.site/api/zendesk/oauth/callback";
-}
-
-function sign(payload: string) {
-  return createHmac("sha256", clientSecret() || "mts-portal").update(payload).digest("base64url");
-}
-
-function challenge(verifier: string) {
-  return createHash("sha256").update(verifier).digest("base64url");
+  const incoming = new URL(request.url);
+  const loopback = (u: URL) => ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+  const base = loopback(incoming) ? incoming : new URL(process.env.BETTER_AUTH_URL || "https://mtsportal.cloudgpu.site");
+  if (base.protocol !== "https:" && !(base.protocol === "http:" && loopback(base))) throw new Error("Invalid OAuth callback origin.");
+  return new URL(CALLBACK, base.origin).toString();
 }
 
 function page(title: string, message: string, status = 400) {
-  const body = `<!doctype html><html><body style="font-family:sans-serif;padding:2rem;max-width:36rem"><h1>${title}</h1><p>${message}</p></body></html>`;
-  return new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+  return new Response(`${title}\n${message}`, { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
 }
 
-export function zendeskAdminStart(request: Request) {
-  const verifier = randomBytes(32).toString("base64url");
-  const payload = `${randomBytes(16).toString("base64url")}.${Date.now() + 10 * 60 * 1000}.${verifier}`;
-  const url = new URL(`${HOST}/oauth/authorizations/new`);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", clientId());
-  url.searchParams.set("redirect_uri", zendeskRedirectUri(request));
-  url.searchParams.set("scope", SCOPES);
-  url.searchParams.set("code_challenge", challenge(verifier));
-  url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set("state", `${payload}.${sign(payload)}`);
-  return Response.redirect(url.toString(), 302);
+function signature(payload: string, secret: string) {
+  return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
-function validState(state: string) {
-  const split = state.lastIndexOf(".");
-  if (split < 0) return null;
-  const payload = state.slice(0, split);
-  const sig = state.slice(split + 1);
-  if (sign(payload) !== sig) return null;
-  const parts = payload.split(".");
-  const exp = Number(parts[1]);
-  const verifier = parts[2] || "";
-  if (!verifier || !Number.isFinite(exp) || exp <= Date.now()) return null;
-  return verifier;
+function cookie(value: string, request: Request, maxAge = TTL) {
+  const secure = new URL(zendeskRedirectUri(request)).protocol === "https:" ? "; Secure" : "";
+  return `${COOKIE}=${value}; Path=${CALLBACK}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
-async function postToken(body: Record<string, string>) {
-  const response = await fetch(`${HOST}/oauth/tokens`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const tokenText = await response.text();
-  return { ok: response.ok, tokenText };
+async function ownerSession(request: Request, owner: string) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  const user = session?.user;
+  return user?.emailVerified && user.email.trim().toLowerCase() === owner ? user.id : null;
+}
+
+export async function zendeskAdminStart(request: Request) {
+  try {
+    const cfg = config();
+    const userId = await ownerSession(request, cfg.owner);
+    if (!userId) return page("Unauthorized", "Sign in to the portal as its verified owner before connecting Zendesk.", 401);
+    const verifier = randomBytes(32).toString("base64url");
+    const state = randomBytes(32).toString("base64url");
+    const redirectUri = zendeskRedirectUri(request);
+    const payload = Buffer.from(JSON.stringify({ state, verifier, userId, redirectUri, exp: Date.now() + TTL * 1000 })).toString("base64url");
+    const url = new URL(`${cfg.host}/oauth/authorizations/new`);
+    url.search = new URLSearchParams({ response_type: "code", client_id: cfg.clientId, redirect_uri: redirectUri, scope: cfg.scopes, code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256", state }).toString();
+    return new Response(null, { status: 302, headers: { location: url.toString(), "set-cookie": cookie(`${payload}.${signature(payload, cfg.secret)}`, request), "cache-control": "no-store" } });
+  } catch {
+    return page("Zendesk configuration error", "Check the server OAuth settings and portal session.", 503);
+  }
+}
+
+function readState(request: Request, secret: string) {
+  try {
+    const value = (request.headers.get("cookie") || "").split(";").map(v => v.trim()).find(v => v.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1) || "";
+    const [payload, sig] = value.split(".");
+    if (!payload || !sig) return null;
+    const actual = Buffer.from(sig);
+    const expected = Buffer.from(signature(payload, secret));
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { state: string; verifier: string; userId: string; redirectUri: string; exp: number };
+    if (!data.verifier || !data.state || data.exp <= Date.now()) return null;
+    return data;
+  } catch { return null; }
 }
 
 export async function zendeskAdminCallback(request: Request) {
-  const incoming = new URL(request.url);
-  if (incoming.searchParams.get("error")) return page("Zendesk did not grant access", incoming.searchParams.get("error_description") || "The grant was cancelled.");
-  const code = incoming.searchParams.get("code") || "";
-  const verifier = validState(incoming.searchParams.get("state") || "");
-  if (!code || !verifier) return page("Sign-in expired", "Open the admin connection again.");
-  const redirectUri = zendeskRedirectUri(request);
-  const secret = clientSecret();
-  const base = {
-    grant_type: "authorization_code",
-    code,
-    client_id: clientId(),
-    redirect_uri: redirectUri,
-    code_verifier: verifier,
-    scope: SCOPES,
-  };
-  let result = await postToken(base);
-  if (!result.ok && secret && /did not include its credentials/i.test(result.tokenText)) {
-    result = await postToken({ ...base, client_secret: secret });
+  try {
+    const cfg = config();
+    const incoming = new URL(request.url);
+    const userId = await ownerSession(request, cfg.owner);
+    if (!userId) return page("Unauthorized", "Sign in to the portal as its verified owner.", 401);
+    if (incoming.searchParams.has("error")) return page("Zendesk did not grant access", "The authorization was denied. Check the OAuth client and restart the connection.");
+    const code = incoming.searchParams.get("code");
+    const flow = readState(request, cfg.secret);
+    if (!code || !flow || flow.state !== incoming.searchParams.get("state") || flow.userId !== userId || flow.redirectUri !== zendeskRedirectUri(request)) {
+      return page("Sign-in expired", "Restart the Zendesk connection from the same browser.");
+    }
+    const response = await fetch(`${cfg.host}/oauth/tokens`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ grant_type: "authorization_code", code, client_id: cfg.clientId, client_secret: cfg.secret, redirect_uri: flow.redirectUri, code_verifier: flow.verifier, scope: cfg.scopes }),
+    });
+    const parsed = await response.json().catch(() => ({})) as { access_token?: string; refresh_token?: string; error?: string };
+    if (!response.ok || !parsed.access_token) return page("Zendesk refused the grant", `Token exchange failed (HTTP ${response.status}). Verify client identifier, secret, callback URL and scopes.`, 502);
+    const meResponse = await fetch(`${cfg.host}/api/v2/users/me.json`, { headers: { Authorization: `Bearer ${parsed.access_token}`, Accept: "application/json" } });
+    const me = await meResponse.json().catch(() => ({})) as { user?: { email?: string; role?: string; suspended?: boolean; active?: boolean } };
+    const email = me.user?.email?.trim().toLowerCase() || "";
+    const role = me.user?.role || "";
+    if (!meResponse.ok || role !== "admin" || email !== cfg.owner || me.user?.suspended || me.user?.active === false) {
+      return page("Zendesk account cannot run the desk", "Authorize using the configured active Zendesk admin account.", 403);
+    }
+    const sql = await getSql();
+    await sql`alter table integration_settings add column if not exists oauth_access_token text not null default ''`;
+    await sql`
+      update integration_settings
+      set oauth_access_token = ${parsed.access_token},
+          oauth_refresh_token = ${parsed.refresh_token || ""},
+          oauth_user_email = ${email}, oauth_user_role = ${role},
+          oauth_client_id = ${cfg.clientId}, subdomain = ${cfg.subdomain},
+          last_status = 'admin', last_error = ''
+      where id = 1
+    `;
+    return new Response(null, { status: 302, headers: { location: new URL("/production/admin-portal/integrations", flow.redirectUri).toString(), "set-cookie": cookie("", request, 0), "cache-control": "no-store" } });
+  } catch {
+    return page("Zendesk connection failed", "Check server configuration, network and database logs, then retry.", 502);
   }
-  if (!result.ok) return page("Zendesk refused the grant", result.tokenText.replaceAll(secret, "").slice(0, 280));
-  const parsed = JSON.parse(result.tokenText) as { access_token?: string; refresh_token?: string };
-  if (!parsed.access_token) return page("Zendesk refused the grant", "No access token was returned.");
-  const meResponse = await fetch(`${HOST}/api/v2/users/me.json`, {
-    headers: { Authorization: `Bearer ${parsed.access_token}`, Accept: "application/json" },
-  });
-  const me = (await meResponse.json()) as { user?: { email?: string; role?: string } };
-  const email = me.user?.email?.trim().toLowerCase() || "";
-  const role = me.user?.role || "";
-  if (!meResponse.ok || role === "end-user") {
-    return page("This Zendesk login cannot run the desk", `${email || "That account"} is ${role || "not an agent"}. Sign in to Zendesk as admin@abitech.site, then open the connection again.`);
-  }
-  const sql = await getSql();
-  await sql`alter table integration_settings add column if not exists oauth_access_token text not null default ''`;
-  await sql`
-    update integration_settings
-    set oauth_access_token = ${parsed.access_token},
-        oauth_refresh_token = ${parsed.refresh_token || ""},
-        oauth_user_email = ${email},
-        oauth_user_role = ${role},
-        subdomain = 'managetechservices-16737',
-        last_status = 'admin',
-        last_error = ''
-    where id = 1
-  `;
-  return Response.redirect(`${new URL(redirectUri).origin}/production/admin-portal/integrations`, 302);
 }
