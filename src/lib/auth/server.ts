@@ -219,10 +219,10 @@ const zendeskOAuthConfig = zendeskReady
           });
           if (!response.ok) return null;
           const body = (await response.json()) as {
-            user?: { id?: number | string; name?: string; email?: string; active?: boolean; suspended?: boolean };
+            user?: { id?: number | string; name?: string; email?: string; active?: boolean; suspended?: boolean; verified?: boolean };
           };
           const user = body.user;
-          if (!user?.id || !user.email || user.suspended || user.active === false) return null;
+          if (!user?.id || !user.email || user.suspended || user.active === false || user.verified !== true) return null;
           return {
             id: String(user.id),
             name: user.name || user.email,
