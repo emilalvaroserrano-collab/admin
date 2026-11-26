@@ -677,16 +677,15 @@ type ZSettings = {
 };
 
 const DESK_CLIENT_ID = "managetech";
-const STALE_DESK_CLIENTS = new Set(["mts-portal", "mtsportal", "mts-auth", "manage_tech_service"]);
 
 function deskClientId(value: string) {
   const id = value.trim();
-  if (!id || STALE_DESK_CLIENTS.has(id)) return DESK_CLIENT_ID;
+  if (!id) return DESK_CLIENT_ID;
   return id;
 }
 
 function envZendesk(): ZSettings {
-  const clientId = (process.env.ZENDESK_OAUTH_CLIENT_ID || "").trim();
+  const clientId = deskClientId(process.env.ZENDESK_OAUTH_CLIENT_ID || "");
   const clientSecret = (process.env.ZENDESK_OAUTH_CLIENT_SECRET || "").trim();
   const tokenUrl = process.env.ZENDESK_OAUTH_TOKEN_URL || "";
   const subdomain = cleanSubdomain(process.env.ZENDESK_SUBDOMAIN || process.env.ZENDESK_HOST || tokenUrl || "shop");
@@ -713,27 +712,28 @@ async function readZendesk(sql: Sql): Promise<ZSettings> {
   const storedEmail = row ? s(row, "email").trim() : "";
   const storedSecret = row ? s(row, "oauth_client_secret").trim() : "";
   const storedToken = apiTokenUnlessSecret(row ? s(row, "api_token") : "", storedSecret || envz.oauthClientSecret);
-  if (storedEmail && storedToken) {
+  const configuredToken = apiTokenUnlessSecret(envz.apiToken, envz.oauthClientSecret || storedSecret);
+  if (storedEmail && storedToken && !(envz.email && configuredToken)) {
     return {
       subdomain: (row ? cleanSubdomain(s(row, "subdomain")) : "") || envz.subdomain || "managetechservices-16737",
       email: envz.email || storedEmail,
       apiToken: storedToken,
       fromEnv: false,
-      oauthClientId: deskClientId(row ? s(row, "oauth_client_id") : ""),
-      oauthClientSecret: (row ? s(row, "oauth_client_secret") : "") || envz.oauthClientSecret,
+      oauthClientId: process.env.ZENDESK_OAUTH_CLIENT_ID?.trim() || deskClientId(row ? s(row, "oauth_client_id") : ""),
+      oauthClientSecret: envz.oauthClientSecret || storedSecret,
       oauthScopes: row && s(row, "oauth_scopes") ? s(row, "oauth_scopes") : "read write",
       oauthRefreshToken: row ? s(row, "oauth_refresh_token") : "",
       accessToken: row ? s(row, "oauth_access_token") : "",
     };
   }
-  const envToken = apiTokenUnlessSecret(envz.apiToken, envz.oauthClientSecret || storedSecret);
+  const envToken = configuredToken;
   if (envz.email && envToken) {
     return {
       ...envz,
       email: envz.email,
       apiToken: envToken,
-      oauthClientId: deskClientId((row ? s(row, "oauth_client_id") : "") || envz.oauthClientId),
-      oauthClientSecret: (row ? s(row, "oauth_client_secret") : "") || envz.oauthClientSecret,
+      oauthClientId: envz.oauthClientId,
+      oauthClientSecret: envz.oauthClientSecret || storedSecret,
       oauthRefreshToken: row ? s(row, "oauth_refresh_token") : "",
       accessToken: row ? s(row, "oauth_access_token") : "",
       fromEnv: true,
@@ -744,8 +744,8 @@ async function readZendesk(sql: Sql): Promise<ZSettings> {
       ...envz,
       apiToken: "",
       email: envz.email || (row ? s(row, "email") : ""),
-      oauthClientId: deskClientId((row ? s(row, "oauth_client_id") : "") || envz.oauthClientId),
-      oauthClientSecret: (row ? s(row, "oauth_client_secret") : "") || envz.oauthClientSecret,
+      oauthClientId: envz.oauthClientId,
+      oauthClientSecret: envz.oauthClientSecret || storedSecret,
       oauthRefreshToken: row ? s(row, "oauth_refresh_token") : "",
       accessToken: row ? s(row, "oauth_access_token") : "",
       fromEnv: true,
@@ -848,34 +848,15 @@ async function refreshGrantedToken(settings: ZSettings) {
   throw new Error(`Zendesk refused the admin grant. ${lastDetail}`);
 }
 
-async function clearStaleGrant(settings: ZSettings) {
-  settings.oauthRefreshToken = "";
-  settings.accessToken = "";
-  try {
-    const { getSql } = await import("@/lib/db");
-    const sql = await getSql();
-    await sql`update integration_settings set oauth_refresh_token = '', oauth_access_token = '' where id = 1`;
-  } catch {
-    /* the client-credentials grant can still be used */
-  }
-}
-
 async function zendeskAccessToken(settings: ZSettings) {
   if (settings.accessToken) return settings.accessToken;
-  if (settings.oauthClientId && settings.oauthClientSecret) {
-    try {
-      return await requestClientToken(settings);
-    } catch (error) {
-      if (!settings.oauthRefreshToken) throw error;
-    }
-  }
   if (settings.oauthRefreshToken) {
     try {
       return await refreshGrantedToken(settings);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (!/invalid_client|refused the admin grant/i.test(message)) throw error;
-      await clearStaleGrant(settings);
+      // Preserve the stored grant on transient upstream failures.
+      if (!/invalid_grant|invalid_client/i.test(message)) throw error;
     }
   }
   if (settings.oauthClientId && settings.oauthClientSecret) return requestClientToken(settings);
@@ -965,7 +946,7 @@ async function zendesk(settings: ZSettings, path: string, init?: RequestInit) {
       /* keep the raw snippet */
     }
     if (response.status === 401 && /couldn't authenticate you/i.test(detail)) {
-      detail = "That value is not a Zendesk API token. The OAuth client signs in as emilalvaroserrano@gmail.com, an end user, so it cannot act as an agent.";
+      detail = "Zendesk rejected the credentials. Verify the API token, agent email, OAuth client identifier and token owner.";
     }
     if (response.status === 403) {
       detail = settings.oauthRefreshToken
