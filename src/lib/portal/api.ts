@@ -1875,6 +1875,15 @@ export const getSessionHome = createServerFn({ method: "GET" })
     const users = await sql<Row>`select name, email from "user" where id = ${context.userId} limit 1`;
     const user = users[0];
     const email = user ? s(user, "email").toLowerCase() : "";
+    const ownerEmail = portalOwnerEmail();
+    if (email && email === ownerEmail) {
+      await sql`
+        insert into portal_staff (user_id, name, email, role, active)
+        values (${context.userId}, ${user ? s(user, "name") : email}, ${email}, 'owner', true)
+        on conflict (user_id) do update set role = 'owner', active = true, email = excluded.email
+      `;
+      return { destination: "portal" as const, desk: true, role: "owner" };
+    }
     if (!row) {
       const any = await sql<Row>`select count(*)::int as n from portal_staff`;
       const empty = (any[0] ? n(any[0], "n") : 0) === 0;
@@ -1904,15 +1913,6 @@ export const getSessionHome = createServerFn({ method: "GET" })
       }
     }
     const desk = role === "owner" || role === "admin" || role === "agent";
-    const ownerEmail = portalOwnerEmail();
-    if (email && email === ownerEmail) {
-      await sql`
-        insert into portal_staff (user_id, name, email, role, active)
-        values (${context.userId}, ${user ? s(user, "name") : email}, ${email}, 'owner', true)
-        on conflict (user_id) do update set role = 'owner', active = true, email = excluded.email
-      `;
-      return { destination: "portal" as const, desk: true, role: "owner" };
-    }
     return { destination: "portal" as const, desk, role: desk ? role : "" };
   });
 
