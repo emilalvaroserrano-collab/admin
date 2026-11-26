@@ -447,10 +447,11 @@ async function promoteDeskOwner(sql: Sql, userId: string, name: string, email: s
 }
 
 async function loadActor(sql: Sql, userId: string): Promise<Actor> {
-  const users = await sql<Row>`select id, name, email from "user" where id = ${userId}`;
+  const users = await sql<Row>`select id, name, email, "emailVerified" from "user" where id = ${userId}`;
   const user = users[0];
   const name = user ? s(user, "name") || "Staff" : "Staff";
   const email = user ? s(user, "email") : "";
+  if (!user || !b(user, "emailVerified")) throw new Error("Verify your email before accessing the desk.");
   await promoteDeskOwner(sql, userId, name, email);
   const rows = await sql<Row>`
     select staff.*, org.name as organization_name
@@ -1872,9 +1873,10 @@ export const getSessionHome = createServerFn({ method: "GET" })
     const sql = await getSql();
     const rows = await sql<Row>`select role, active from portal_staff where user_id = ${context.userId} limit 1`;
     const row = rows[0];
-    const users = await sql<Row>`select name, email from "user" where id = ${context.userId} limit 1`;
+    const users = await sql<Row>`select name, email, "emailVerified" from "user" where id = ${context.userId} limit 1`;
     const user = users[0];
     const email = user ? s(user, "email").toLowerCase() : "";
+    if (!user || !b(user, "emailVerified")) return { destination: "portal" as const, desk: false, role: "" };
     const ownerEmail = portalOwnerEmail();
     if (email && email === ownerEmail) {
       await sql`
